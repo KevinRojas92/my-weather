@@ -9,6 +9,23 @@
     color: #E9EFF2;
 }
 
+body {
+    background-color: #083359;
+    min-height: 100vh;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 header {
     width: 90vw;
     height: fit-content;
@@ -59,14 +76,65 @@ button {
     cursor: pointer;
 }
 
-#lugar {
+button:hover:not(:disabled) {
+    background-color: #4A8BC4;
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.secondary-button {
+    display: block;
+    width: fit-content;
+    height: auto;
+    margin: 20px auto 0;
+    padding: 8px 18px;
+    background-color: transparent;
+    border: 2px solid #5B9ED9;
+    border-radius: 20px;
+}
+
+.secondary-button:hover:not(:disabled) {
+    background-color: #0F4A7D;
+}
+
+#message {
+    min-height: 1.5em;
+    margin-top: 2vh;
+    text-align: center;
+}
+
+#message.error {
+    color: #FFB4A9;
+}
+
+body.loading #current_weather,
+body.loading #details {
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+#weather_icon {
+    display: block;
+    width: 80px;
+    height: 80px;
+    margin: 0 auto -20px;
+}
+
+#weather_icon[hidden] {
+    display: none;
+}
+
+#location {
     width: 100%;
     text-align: center;
     margin: 3vh 0;
     font-size: 45px;
 }
 
-#datos {
+#details {
     margin-top: 5vh;
     margin-bottom: 5vh;
     display: flex;
@@ -74,46 +142,50 @@ button {
     justify-content: space-between;
 }
 
-#estado_actual {
+#current_weather {
     width: 60vw;
-    height: 60vw;
+    min-height: 60vw;
     margin: auto;
 }
 
-#datos div {
+#details div {
     width: 42vw;
-    height: 42vw;
+    min-height: 42vw;
 }
 
-#estado_actual, #datos div {
+#current_weather, #details div {
     padding: 15px;
     border: 5px solid #58748C;
     border-radius: 20px;
 }
 
 
-#estado_actual p {
+#current_weather p {
     padding-top: 40px;
 }
 
-#datos div p {
+#details div p {
     padding-top: 20px;
 }
 
-#estado_actual p, #datos div p {
+#current_weather p, #details div p {
     width: 100%;
     height: fit-content;
     text-align: center;
 }
 
-#estado_actual p span, #datos div p span {
+#current_weather p #value_condition {
+    font-size: 28px;
+}
+
+#current_weather p span, #details div p span {
     width: 100%;
     font-size: 50px;
     text-align: center;
     font-weight: bold;
 }
 
-#temp_max, #temp_min, #humedad, #sensacion {
+#temp_max, #temp_min, #humidity, #feels_like {
     margin-bottom: 3vh;
 }
 
@@ -147,22 +219,22 @@ button {
         margin: 0;
     }
     
-    #lugar {
+    #location {
         margin: 3vh 0;
         font-size: 60px;
     }
     
-    #estado_actual, #datos div {
+    #current_weather, #details div {
         width: 38vw;
-        height: 38vw;
+        min-height: 38vw;
     }
     
     
-    #estado_actual p, #datos div p {
+    #current_weather p, #details div p {
         padding-top: 40px;
     }
     
-    #estado_actual p span, #datos div p span {
+    #current_weather p span, #details div p span {
         font-size: 60px;
     }
 }
@@ -185,13 +257,13 @@ button {
         width: 15vw;
     }
     
-    #estado_actual, #datos div {
+    #current_weather, #details div {
         width: 25vw;
-        height: 25vw;
+        min-height: 25vw;
     }
     
     
-    #estado_actual p, #datos div p {
+    #current_weather p, #details div p {
         padding-top: 60px;
     }
 }
@@ -209,25 +281,75 @@ button {
         width: 10vw;
     }
     
-    #estado_actual, #datos div {
+    #current_weather, #details div {
         width: 18vw;
-        height: 18vw;
+        min-height: 18vw;
     }
     
     
-    #estado_actual p, #datos div p {
+    #current_weather p, #details div p {
         padding-top: 50px;
     }
 }
 
 @media screen and (min-width: 1629px) {
-    #estado_actual, #datos div {
+    #current_weather, #details div {
         width: 15vw;
-        height: 15vw;
+        min-height: 15vw;
     }
     
     
-    #estado_actual p, #datos div p {
+    #current_weather p, #details div p {
         padding-top: 40px;
     }
+}
+/* ---------- Predictive search (city suggestions) ---------- */
+
+.search-box {
+    position: relative;
+}
+
+#suggestions {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 10;
+    list-style: none;
+    background-color: #E9EFF2;
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+#suggestions[hidden] {
+    display: none;
+}
+
+#suggestions li {
+    padding: 10px 20px;
+    cursor: pointer;
+    color: #083359;
+    text-align: left;
+}
+
+#suggestions li + li {
+    border-top: 1px solid #C9D6E0;
+}
+
+#suggestions li small {
+    display: block;
+    color: #58748C;
+}
+
+#suggestions li:hover,
+#suggestions li[aria-selected="true"] {
+    background-color: #5B9ED9;
+}
+
+#suggestions li:hover,
+#suggestions li:hover small,
+#suggestions li[aria-selected="true"],
+#suggestions li[aria-selected="true"] small {
+    color: #FFFFFF;
 }

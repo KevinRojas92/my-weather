@@ -1,178 +1,442 @@
 'use strict';
 
-//https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid=698602930bd82be2ecbd605539371c85
+// OpenWeatherMap: current weather by coordinates
+// https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={apiKey}
+const API_KEY = "698602930bd82be2ecbd605539371c85";
+const WEATHER_URL = "https://api.openweathermap.org/data/2.5/weather";
 
-//http://api.openweathermap.org/geo/1.0/direct?q={city name},{state code},{country code}&limit={limit}&appid=698602930bd82be2ecbd605539371c85
+// Open-Meteo: city search for the predictive search box (free, no API key)
+// https://open-meteo.com/en/docs/geocoding-api
+const CITY_SEARCH_URL = "https://geocoding-api.open-meteo.com/v1/search";
 
-const apiKey = "698602930bd82be2ecbd605539371c85";
-let buscar = document.getElementById("buscar");
-let contador = 0;
+// Fallback when the browser doesn't share its location (free, no API key)
+const IP_LOCATION_URL = "https://get.geojs.io/v1/ip/geo.json";
 
-function CrearBase () {
-    let estado_actual = document.getElementById("estado_actual");
-    let texto_estado_actual = document.getElementById("texto_estado_actual");
+const STORAGE_KEY = "myweather_last_search";
+const MIN_QUERY_LENGTH = 2;
+const MAX_SUGGESTIONS = 6;
+const SEARCH_DELAY_MS = 250;
 
-    let resLocal_estado_actual = document.getElementById("resultado_estado_actual");
+const searchForm = document.getElementById("search_form");
+const searchInput = document.getElementById("search_input");
+const searchButton = document.getElementById("search_button");
+const suggestionsList = document.getElementById("suggestions");
+const myLocationButton = document.getElementById("my_location");
+const message = document.getElementById("message");
+const locationTitle = document.getElementById("location");
+const weatherIcon = document.getElementById("weather_icon");
 
-    if (resLocal_estado_actual) {
-        estado_actual.removeChild(resLocal_estado_actual);
+const values = {
+    condition: document.getElementById("value_condition"),
+    temp_max: document.getElementById("value_temp_max"),
+    temp_min: document.getElementById("value_temp_min"),
+    humidity: document.getElementById("value_humidity"),
+    feels_like: document.getElementById("value_feels_like"),
+    pressure: document.getElementById("value_pressure"),
+    wind_speed: document.getElementById("value_wind_speed")
+};
+
+/* ---------- Messages and loading state ---------- */
+
+function showMessage(text, isError = false) {
+    message.textContent = text;
+    message.classList.toggle("error", isError);
+}
+
+function setLoading(isLoading) {
+    searchButton.disabled = isLoading;
+    myLocationButton.disabled = isLoading;
+    document.body.classList.toggle("loading", isLoading);
+}
+
+/* ---------- Rendering the weather ---------- */
+
+function capitalize(text) {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function showWeather(placeName, weather) {
+    locationTitle.textContent = placeName;
+
+    values.condition.textContent = weather.condition;
+    values.temp_max.textContent = weather.temp_max;
+    values.temp_min.textContent = weather.temp_min;
+    values.humidity.textContent = weather.humidity;
+    values.feels_like.textContent = weather.feels_like;
+    values.pressure.textContent = weather.pressure;
+    values.wind_speed.textContent = weather.wind_speed;
+
+    if (weather.icon) {
+        weatherIcon.src = `https://openweathermap.org/img/wn/${weather.icon}@2x.png`;
+        weatherIcon.alt = weather.condition;
+        weatherIcon.hidden = false;
+    } else {
+        weatherIcon.hidden = true;
+    }
+}
+
+// Turns the API response into the values the app displays
+function parseWeather(json) {
+    return {
+        condition: capitalize(json.weather[0].description),
+        icon: json.weather[0].icon,
+        temp_max: Math.round(json.main.temp_max),
+        temp_min: Math.round(json.main.temp_min),
+        humidity: json.main.humidity,
+        feels_like: Math.round(json.main.feels_like),
+        pressure: json.main.pressure,
+        // With units=metric the API returns wind speed in m/s: convert it to km/h
+        wind_speed: Math.round(json.wind.speed * 3.6)
+    };
+}
+
+/* ---------- Saving and reading the last search ---------- */
+
+function saveLastSearch(search) {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(search));
+    } catch (error) {
+        // If the browser can't save (private mode, etc.) the app still works
+    }
+}
+
+function readLastSearch() {
+    try {
+        const search = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        if (search && typeof search.lat === "number" && typeof search.lon === "number") {
+            return search;
+        }
+    } catch (error) {
+        // Corrupted saved data: ignore it
+    }
+    return null;
+}
+
+/* ---------- API calls ---------- */
+
+async function fetchJSON(url, options) {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+        throw new Error(`Error ${response.status} requesting ${url}`);
+    }
+    return response.json();
+}
+
+// Gets the weather for some coordinates, shows it and saves it
+async function loadWeather(lat, lon, placeName) {
+    const json = await fetchJSON(`${WEATHER_URL}?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=en`);
+    const weather = parseWeather(json);
+    const name = placeName || [json.name, json.sys && json.sys.country].filter(Boolean).join(", ");
+
+    showWeather(name, weather);
+    saveLastSearch({ name, lat, lon, weather });
+}
+
+// Searches cities whose name starts with the text. Only returns cities:
+// countries, regions, airports, etc. are filtered out.
+async function searchCities(query, signal) {
+    const url = `${CITY_SEARCH_URL}?name=${encodeURIComponent(query)}&count=20&language=en&format=json`;
+    const json = await fetchJSON(url, { signal });
+    const results = json.results || [];
+
+    const cities = [];
+    const seen = new Set();
+
+    for (const place of results) {
+        // GeoNames "PPL*" feature codes are populated places (cities, towns, capitals...)
+        if (!place.feature_code || !place.feature_code.startsWith("PPL")) {
+            continue;
+        }
+
+        const region = place.admin1 && place.admin1 !== place.name ? place.admin1 : "";
+        const key = `${place.name}|${region}|${place.country_code}`;
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+
+        cities.push({
+            name: place.name,
+            region,
+            country: place.country || place.country_code || "",
+            countryCode: place.country_code || "",
+            lat: place.latitude,
+            lon: place.longitude
+        });
+
+        if (cities.length === MAX_SUGGESTIONS) {
+            break;
+        }
     }
 
-    estado_actual.removeChild(texto_estado_actual);
+    return cities;
+}
 
-    estado_actual.innerHTML += '<p id="texto_estado_actual">Estado actual</p>';
+function cityLabel(city) {
+    return [city.name, city.region, city.countryCode].filter(Boolean).join(", ");
+}
 
-    let datos = document.getElementById("datos");
+/* ---------- Predictive search ---------- */
 
-    let temp_max = document.getElementById("temp_max");
-    let temp_min = document.getElementById("temp_min");
-    let humedad = document.getElementById("humedad");
-    let sensacion = document.getElementById("sensacion");
-    let presion = document.getElementById("presion");
-    let velocidad = document.getElementById("velocidad");
+let suggestions = [];
+let activeIndex = -1;
+let searchTimer = null;
+let searchController = null;
 
-    datos.removeChild(temp_max);
-    datos.removeChild(temp_min);
-    datos.removeChild(humedad);
-    datos.removeChild(sensacion);
-    datos.removeChild(presion);
-    datos.removeChild(velocidad);
+function closeSuggestions() {
+    suggestions = [];
+    activeIndex = -1;
+    suggestionsList.innerHTML = "";
+    suggestionsList.hidden = true;
+    searchInput.setAttribute("aria-expanded", "false");
+    searchInput.removeAttribute("aria-activedescendant");
+}
 
-    let div_temp_max = document.createElement('div');
-    div_temp_max.setAttribute("id", "temp_max");
-    div_temp_max.innerHTML += "<p>Temperatura máxima</p>";
+function renderSuggestions(cities) {
+    suggestions = cities;
+    activeIndex = -1;
+    suggestionsList.innerHTML = "";
+    searchInput.removeAttribute("aria-activedescendant");
 
-    datos.appendChild(div_temp_max);
+    if (cities.length === 0) {
+        closeSuggestions();
+        return;
+    }
 
-    let div_temp_min = document.createElement('div');
-    div_temp_min.setAttribute("id", "temp_min");
-    div_temp_min.innerHTML += "<p>Temperatura mínima</p>";
+    cities.forEach((city, index) => {
+        const item = document.createElement("li");
+        item.id = `suggestion_${index}`;
+        item.setAttribute("role", "option");
+        item.setAttribute("aria-selected", "false");
 
-    datos.appendChild(div_temp_min);
+        item.textContent = city.name;
+        const detail = document.createElement("small");
+        detail.textContent = [city.region, city.country].filter(Boolean).join(", ");
+        item.appendChild(detail);
 
-    let div_humedad = document.createElement('div');
-    div_humedad.setAttribute("id", "humedad");
-    div_humedad.innerHTML += "<p>Humedad</p>";
+        // mousedown (not click) so it runs before the input loses focus
+        item.addEventListener("mousedown", event => {
+            event.preventDefault();
+            chooseCity(city);
+        });
 
-    datos.appendChild(div_humedad);
+        suggestionsList.appendChild(item);
+    });
 
-    let div_sensacion = document.createElement('div');
-    div_sensacion.setAttribute("id", "sensacion");
-    div_sensacion.innerHTML += "<p>Sensación térmica</p>";
+    suggestionsList.hidden = false;
+    searchInput.setAttribute("aria-expanded", "true");
+}
 
-    datos.appendChild(div_sensacion);
+function highlightSuggestion(index) {
+    const items = suggestionsList.querySelectorAll("li");
+    items.forEach((item, i) => item.setAttribute("aria-selected", i === index ? "true" : "false"));
+    activeIndex = index;
 
-    let div_presion = document.createElement('div');
-    div_presion.setAttribute("id", "presion");
-    div_presion.innerHTML += "<p>Presíon atmosférica</p>";
+    if (index >= 0) {
+        searchInput.setAttribute("aria-activedescendant", items[index].id);
+        items[index].scrollIntoView({ block: "nearest" });
+    } else {
+        searchInput.removeAttribute("aria-activedescendant");
+    }
+}
 
-    datos.appendChild(div_presion);
-
-    let div_velocidad = document.createElement('div');
-    div_velocidad.setAttribute("id", "velocidad");
-    div_velocidad.innerHTML += "<p>Velocidad del viento</p>";
-
-    datos.appendChild(div_velocidad);
-};
-
-function CrearDatos (json_clima) {
-    let dato_estado_actual = json_clima.weather[0].main;
-    estado_actual.innerHTML += `<p id="resultado_estado_actual"><span>${dato_estado_actual}</span></p>`;
-
-    let dato_temp_max = json_clima.main.temp_max;
-    temp_max.innerHTML += `<p><span>${dato_temp_max}</span>°C</p>`;
-
-    let dato_temp_min = json_clima.main.temp_min;
-    temp_min.innerHTML += `<p><span>${dato_temp_min}</span>°C</p>`;
-
-    let dato_humedad = json_clima.main.humidity;
-    humedad.innerHTML += `<p><span>${dato_humedad}</span>%</p>`;
-
-    let dato_sensacion = json_clima.main.feels_like;
-    sensacion.innerHTML += `<p><span>${dato_sensacion}</span>°C</p>`;
-
-    let dato_presion = json_clima.main.pressure;
-    presion.innerHTML += `<p><span>${dato_presion}</span>hPa</p>`;
-
-    let dato_velocidad = json_clima.wind.speed;
-    velocidad.innerHTML += `<p><span>${dato_velocidad}</span>km/h</p>`;
-
-    let array_datos = [
-        dato_estado_actual,
-        dato_temp_max,
-        dato_temp_min,
-        dato_humedad,
-        dato_sensacion,
-        dato_presion,
-        dato_velocidad
-    ];
-
-    return array_datos;
-};
-
-buscar.addEventListener('click', buscarUbicacion => {
-    buscarUbicacion.preventDefault();
-
-    contador += 1;
-    CrearBase ();
-
-    let ubicacion = document.getElementById("buscador").value;
+async function updateSuggestions(query) {
+    if (searchController) {
+        searchController.abort();
+    }
+    searchController = new AbortController();
 
     try {
-        fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${ubicacion}&limit=1&appid=${apiKey}`)
-        .then (datos => {
-            return datos.json();
-
-        }).then (json => {
-            let lugar_buscado = json[0].name;
-            let lugar = document.getElementById("lugar");
-            lugar.innerText = `${lugar_buscado}`;
-            localStorage.setItem("lugar", `${lugar_buscado}`);
-
-            let latitud = json[0].lat;
-            let longitud = json[0].lon;
-
-            let apiClima = fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${latitud}&lon=${longitud}&appid=${apiKey}&units=metric`);
-
-            return apiClima;
-
-        }).then (datos_clima => {
-            return datos_clima.json();
-
-        }).then (json_clima => {
-            let array_datos = CrearDatos (json_clima);
-
-            return array_datos;
-
-        }).then (local => {
-            localStorage.setItem("ubicacion", JSON.stringify(local));
-
-        })
+        const cities = await searchCities(query, searchController.signal);
+        // Ignore the answer if the user kept typing in the meantime
+        if (searchInput.value.trim() === query) {
+            renderSuggestions(cities);
+        }
     } catch (error) {
-        alert("Ha ocurrido un error");        
+        if (error.name !== "AbortError") {
+            console.error(error);
+            closeSuggestions();
+        }
+    }
+}
+
+async function chooseCity(city) {
+    closeSuggestions();
+    searchInput.value = "";
+    setLoading(true);
+    showMessage("Loading weather…");
+
+    try {
+        await loadWeather(city.lat, city.lon, cityLabel(city));
+        showMessage("");
+    } catch (error) {
+        console.error(error);
+        showMessage("Something went wrong while getting the weather. Check your connection and try again.", true);
+    } finally {
+        setLoading(false);
+    }
+}
+
+searchInput.addEventListener("input", () => {
+    const query = searchInput.value.trim();
+    clearTimeout(searchTimer);
+
+    if (query.length < MIN_QUERY_LENGTH) {
+        if (searchController) {
+            searchController.abort();
+        }
+        closeSuggestions();
+        return;
+    }
+
+    searchTimer = setTimeout(() => updateSuggestions(query), SEARCH_DELAY_MS);
+});
+
+searchInput.addEventListener("keydown", event => {
+    if (suggestionsList.hidden) {
+        return;
+    }
+
+    if (event.key === "ArrowDown") {
+        event.preventDefault();
+        highlightSuggestion((activeIndex + 1) % suggestions.length);
+    } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        highlightSuggestion(activeIndex <= 0 ? suggestions.length - 1 : activeIndex - 1);
+    } else if (event.key === "Enter" && activeIndex >= 0) {
+        event.preventDefault();
+        chooseCity(suggestions[activeIndex]);
+    } else if (event.key === "Escape") {
+        closeSuggestions();
     }
 });
 
-if (localStorage.length > 0) {
-    let lugar_guardado = localStorage.getItem("lugar");
-    lugar.innerText = `${lugar_guardado}`;
+searchInput.addEventListener("blur", closeSuggestions);
 
-    let datos_guardados = JSON.parse(localStorage.getItem("ubicacion"));
+// Pressing "Search" without picking a suggestion uses the best match
+searchForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    clearTimeout(searchTimer);
 
-    estado_actual.innerHTML += `<p id="resultado_estado_actual"><span>${datos_guardados[0]}</span></p>`;
+    const query = searchInput.value.trim();
+    if (query.length < MIN_QUERY_LENGTH) {
+        showMessage("Type the name of a city.", true);
+        searchInput.focus();
+        return;
+    }
 
-    temp_max.innerHTML += `<p><span>${datos_guardados[1]}</span>°C</p>`;
+    setLoading(true);
+    showMessage("Searching…");
 
-    temp_min.innerHTML += `<p><span>${datos_guardados[2]}</span>°C</p>`;
+    try {
+        const cities = await searchCities(query);
+        if (cities.length === 0) {
+            showMessage(`We couldn't find a city called "${query}". Check the name and try again.`, true);
+            setLoading(false);
+            return;
+        }
+        await chooseCity(cities[0]);
+    } catch (error) {
+        console.error(error);
+        showMessage("Something went wrong while searching. Check your connection and try again.", true);
+        setLoading(false);
+    }
+});
 
-    humedad.innerHTML += `<p><span>${datos_guardados[3]}</span>%</p>`;
+/* ---------- Automatic location detection ---------- */
 
-    sensacion.innerHTML += `<p><span>${datos_guardados[4]}</span>°C</p>`;
-
-    presion.innerHTML += `<p><span>${datos_guardados[5]}</span>hPa</p>`;
-
-    velocidad.innerHTML += `<p><span>${datos_guardados[6]}</span>km/h</p>`;
-} else {
-    console.log("No hay datos");
+function getBrowserPosition() {
+    return new Promise((resolve, reject) => {
+        if (!("geolocation" in navigator)) {
+            reject(new Error("Geolocation not available"));
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            position => resolve({ lat: position.coords.latitude, lon: position.coords.longitude }),
+            reject,
+            { timeout: 10000, maximumAge: 10 * 60 * 1000 }
+        );
+    });
 }
 
+async function getPositionFromIP() {
+    const json = await fetchJSON(IP_LOCATION_URL);
+    const lat = parseFloat(json.latitude);
+    const lon = parseFloat(json.longitude);
+    if (isNaN(lat) || isNaN(lon)) {
+        throw new Error("Invalid IP location response");
+    }
+    return { lat, lon };
+}
+
+async function detectLocation() {
+    setLoading(true);
+    showMessage("Detecting your location…");
+
+    try {
+        let position;
+        let isApproximate = false;
+        try {
+            // 1) Precise location from the browser (asks the user for permission)
+            position = await getBrowserPosition();
+        } catch (error) {
+            // 2) If permission is denied or it fails, approximate location from the IP
+            position = await getPositionFromIP();
+            isApproximate = true;
+        }
+
+        await loadWeather(position.lat, position.lon);
+
+        if (isApproximate) {
+            // IP location can be a nearby city (where the internet provider is)
+            showMessage("Approximate location. If this isn't your city, search for it above or allow location access.");
+        } else {
+            showMessage("");
+        }
+    } catch (error) {
+        console.error(error);
+        showMessage("We couldn't detect your location. Search for a city to see its weather.", true);
+    } finally {
+        setLoading(false);
+    }
+}
+
+myLocationButton.addEventListener("click", detectLocation);
+
+/* ---------- App start ---------- */
+
+async function start() {
+    // Remove the keys used by previous versions of the app
+    try {
+        ["lugar", "ubicacion", "myweather_ultima_consulta"].forEach(key => localStorage.removeItem(key));
+    } catch (error) {}
+
+    const lastSearch = readLastSearch();
+
+    if (!lastSearch) {
+        // First visit: detect where the user is
+        await detectLocation();
+        return;
+    }
+
+    // Later visits: show the saved data right away, then refresh it
+    if (lastSearch.weather) {
+        showWeather(lastSearch.name, lastSearch.weather);
+    }
+
+    try {
+        await loadWeather(lastSearch.lat, lastSearch.lon, lastSearch.name);
+    } catch (error) {
+        console.error(error);
+        showMessage("You're offline: showing the last saved data.", true);
+    }
+}
+
+start();
+
+// Service worker so the app works as a PWA (installable and cached)
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js").catch(error => console.error("Service worker registration failed", error));
+    });
+}

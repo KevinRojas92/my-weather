@@ -1,64 +1,79 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8"/>
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Check the current weather in your city or any city in the world.">
+    <meta name="theme-color" content="#083359">
     <title>MyWeather - Kevin Rojas - PWA</title>
     <link rel="icon" href="img/favicon.ico">
-    <link rel="stylesheet" href="style.css">
+    <link rel="apple-touch-icon" href="img/icon-192.png">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css?v=3">
 </head>
-<body style="background-color: #083359;">
+<body>
     <header>
-        <img src="img/logo.jpg" alt="logo">
+        <img src="img/logo.jpg" alt="MyWeather logo">
         <h1>MyWeather</h1>
     </header>
 
     <main>
-        <div>
-            <form action="" method="GET">
-                <div>
-                    <label for="buscador" style="display: none;">Buscador</label>
-                    <input type="search" id="buscador" name="buscador" placeholder="Busca por país, ciudad o provincia" autocomplete="off">
-                </div>
-    
-                <button id="buscar" type="submit" value="Buscar">Buscar</button>
-            </form>
+        <form id="search_form" novalidate>
+            <div class="search-box">
+                <label for="search_input" class="visually-hidden">Search for a city</label>
+                <input type="search" id="search_input" name="city" placeholder="Search for a city" autocomplete="off"
+                       role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggestions">
+                <ul id="suggestions" role="listbox" aria-label="City suggestions" hidden></ul>
+            </div>
+            <button id="search_button" type="submit">Search</button>
+        </form>
+
+        <button id="my_location" type="button" class="secondary-button">📍 Use my location</button>
+
+        <p id="message" role="status" aria-live="polite"></p>
+
+        <h2 id="location"></h2>
+
+        <div id="current_weather">
+            <p>Current weather</p>
+            <img id="weather_icon" alt="" hidden>
+            <p><span id="value_condition">--</span></p>
         </div>
 
-        <h2 id="lugar"></h2>
-    
-        <div id="estado_actual">
-            <p id="texto_estado_actual">Estado actual</p>
-        </div>
-    
-        <div id="datos">
+        <div id="details">
             <div id="temp_max">
-                <p>Temperatura máxima</p>
+                <p>Max temperature</p>
+                <p><span id="value_temp_max">--</span>°C</p>
             </div>
-    
+
             <div id="temp_min">
-                <p>Temperatura mínima</p>
+                <p>Min temperature</p>
+                <p><span id="value_temp_min">--</span>°C</p>
             </div>
-            
-            <div id="humedad">
-                <p>Humedad</p>
+
+            <div id="humidity">
+                <p>Humidity</p>
+                <p><span id="value_humidity">--</span>%</p>
             </div>
-            
-            <div id="sensacion">
-                <p>Sensación térmica</p>
+
+            <div id="feels_like">
+                <p>Feels like</p>
+                <p><span id="value_feels_like">--</span>°C</p>
             </div>
-            
-            <div id="presion">
-                <p>Presíon atmosférica</p>
+
+            <div id="pressure">
+                <p>Atmospheric pressure</p>
+                <p><span id="value_pressure">--</span>hPa</p>
             </div>
-        
-            <div id="velocidad">
-                <p>Velocidad del viento</p>
+
+            <div id="wind_speed">
+                <p>Wind speed</p>
+                <p><span id="value_wind_speed">--</span>km/h</p>
             </div>
         </div>
     </main>
-    
-    <script src="script_ppl.js"></script>
+
+    <script src="script_ppl.js?v=3"></script>
 </body>
 </html>

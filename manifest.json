@@ -1,0 +1,25 @@
+{
+    "name": "MyWeather",
+    "short_name": "MyWeather",
+    "description": "Check the current weather in your city or any city in the world.",
+    "lang": "en",
+    "start_url": "./",
+    "scope": "./",
+    "display": "standalone",
+    "background_color": "#083359",
+    "theme_color": "#083359",
+    "icons": [
+        {
+            "src": "img/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "img/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}
