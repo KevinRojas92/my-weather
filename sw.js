@@ -2,7 +2,7 @@
 
 // Change the version every time you update the app files,
 // so users get the new version.
-const CACHE = "myweather-v2";
+const CACHE = "myweather-v3";
 
 const FILES = [
     "./",

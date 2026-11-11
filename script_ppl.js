@@ -393,15 +393,17 @@ async function detectLocation() {
         } else {
             showMessage("");
         }
+        return true;
     } catch (error) {
         console.error(error);
         showMessage("We couldn't detect your location. Search for a city to see its weather.", true);
+        return false;
     } finally {
         setLoading(false);
     }
 }
 
-myLocationButton.addEventListener("click", detectLocation);
+myLocationButton.addEventListener("click", () => detectLocation());
 
 /* ---------- App start ---------- */
 
@@ -411,24 +413,16 @@ async function start() {
         ["lugar", "ubicacion", "myweather_ultima_consulta"].forEach(key => localStorage.removeItem(key));
     } catch (error) {}
 
+    // Read it before detecting, because a successful detection overwrites it
     const lastSearch = readLastSearch();
 
-    if (!lastSearch) {
-        // First visit: detect where the user is
-        await detectLocation();
-        return;
-    }
+    // Every visit: detect where the user is right now
+    const detected = await detectLocation();
 
-    // Later visits: show the saved data right away, then refresh it
-    if (lastSearch.weather) {
+    // If detection fails (offline, blocked...), fall back to the last city checked
+    if (!detected && lastSearch && lastSearch.weather) {
         showWeather(lastSearch.name, lastSearch.weather);
-    }
-
-    try {
-        await loadWeather(lastSearch.lat, lastSearch.lon, lastSearch.name);
-    } catch (error) {
-        console.error(error);
-        showMessage("You're offline: showing the last saved data.", true);
+        showMessage("We couldn't detect your location: showing the last city you checked.", true);
     }
 }
 
